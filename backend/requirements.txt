@@ -1,0 +1,25 @@
+# Core RAG dependencies
+requests
+beautifulsoup4
+langchain
+langchain-community
+langchain-text-splitters
+langchain-core
+sentence-transformers
+faiss-cpu
+google-genai
+spacy
+networkx
+python-dotenv
+
+# Backend (FastAPI)
+fastapi
+uvicorn
+pydantic
+motor # Async MongoDB driver
+
+# Frontend (Streamlit)
+streamlit
+
+# Other utilities
+textwrap3
