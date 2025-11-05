@@ -112,48 +112,6 @@ async def _retrieve_from_db(query: str) -> Tuple[str, List[str]]:
     
     return context, urls
 
-def _extract_text_from_urls(urls: List[str]) -> str:
-    """Fetches content from URLs and extracts text. (Kept for compatibility, but logic moved)"""
-    # This function is now deprecated in favor of _extract_and_store_text_from_urls
-    # However, to avoid breaking the existing flow, we'll keep it as a no-op or simple extraction
-    return "" # The new logic handles extraction and storage
-
-def _build_knowledge_graph_info(retrieved_docs: List) -> Tuple[str, int, int]:
-    """Performs a web search using Serper and returns a list of top 3 URLs."""
-    headers = {
-        "X-API-KEY": SERPER_API_KEY,
-        "Content-Type": "application/json"
-    }
-    try:
-        res = requests.post("https://google.serper.dev/search", headers=headers, json={"q": query})
-        res.raise_for_status()
-        data = res.json()
-        links = data.get("organic", [])
-        urls = [link["link"] for link in links[:3]]
-        return urls
-    except Exception as e:
-        print(f"Error during web search: {e}")
-        return []
-
-
-def _extract_text_from_urls(urls: List[str]) -> str:
-    """Fetches content from URLs and extracts text."""
-    ua = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-    }
-    all_text = []
-    for u in urls:
-        try:
-            r = requests.get(u, headers=ua, timeout=10)
-            r.raise_for_status()
-            soup = BeautifulSoup(r.text, "html.parser")
-            paragraphs = [p.get_text().strip() for p in soup.find_all("p") if p.get_text().strip()]
-            all_text.extend(paragraphs)
-        except Exception as e:
-            print(f"Skipping {u}: {e}")
-    return " ".join(all_text)
-
-
 def _build_knowledge_graph_info(retrieved_docs: List) -> Tuple[str, int, int]:
     """Builds a simple knowledge graph from retrieved documents and returns a string summary."""
     G = nx.DiGraph()
