@@ -58,7 +58,7 @@ async def get_all_chat_sessions() -> List[Dict]:
     try:
         # Aggregate to find the first message of each unique chat_id
         pipeline = [
-            {"$sort": {"timestamp": 1}},
+            {"$sort": {"timestamp": 1}}, #Sorts all chat messages in chronological order (oldest → newest).
             {"$group": {
                 "_id": "$chat_id",
                 "first_query": {"$first": "$query"},
@@ -86,7 +86,7 @@ async def insert_rag_document(query: str, url: str, content: str, embedding: Lis
         "timestamp": datetime.datetime.now()
     }
     try:
-        await document_collection.insert_one(document)
+        await document_collection.insert_one(document) #without await the call wont excevute properly leading to incomplete data
     except Exception as e:
         print(f"Error inserting RAG document: {e}")
 
@@ -95,12 +95,13 @@ async def find_similar_documents(query_embedding: List[float], limit: int = 5) -
     For a simple implementation, we will just return the most recent documents for now,
     as a full vector search setup is complex. The user will need to implement a proper
     vector search index on their MongoDB Atlas cluster.
+    To retrieve conceptually similar documents, not necessarily identical queries
     """
     # NOTE: This is a placeholder for a proper vector search.
     # A real implementation would use $vectorSearch aggregation stage.
     # For now, we will just retrieve the most recent documents related to the query.
     # A better, but still simple, approach is to search by query text.
-    history = []
+    history = [] #uses regex text search to find similar documents. temporary stand-in for true embedding based retrieval
     try:
         # Simple text search on the query field
         cursor = document_collection.find({"query": {"$regex": query, "$options": "i"}}).sort("timestamp", -1).limit(limit)
@@ -120,7 +121,10 @@ async def check_document_exists(url: str) -> bool:
         print(f"Error checking document existence: {e}")
         return False
 
-async def get_documents_by_query(query: str, limit: int = 6) -> List[Dict]:
+async def get_documents_by_query(query: str, limit: int = 6) -> List[Dict]: 
+    # To avoid redundant web searches and scraping for repeated or similar user queries.
+    # “Has this query (or a very similar one) already been asked before?
+    # If yes, fetch the same documents from the database instead of re-scraping.”
     """Retrieves documents previously stored for a specific query."""
     documents = []
     try:

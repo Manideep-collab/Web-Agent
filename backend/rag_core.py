@@ -23,12 +23,10 @@ try:
     NLP = spacy.load("en_core_web_md")
 except OSError:
     print("Downloading spaCy model 'en_core_web_md'...")
-    import subprocess
-    subprocess.run(["python3", "-m", "spacy", "download", "en_core_web_md"])
     NLP = spacy.load("en_core_web_md")
 
 EMBEDDING = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-TEXT_SPLITTER = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+TEXT_SPLITTER = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=250)
 
 
 async def _search_web(query: str) -> List[str]:
@@ -86,6 +84,7 @@ async def _extract_and_store_text_from_urls(query: str, urls: List[str]) -> str:
                 # For now, we will store the full content and use the query for retrieval.
                 
                 # Placeholder embedding (e.g., a list of zeros)
+                # To avoid mixing async and sync operations inside this loop.
                 placeholder_embedding = [0.0] * 384 # 384 is the dimension for all-MiniLM-L6-v2
                 
                 # 3. Store the document in MongoDB
@@ -112,9 +111,9 @@ async def _retrieve_from_db(query: str) -> Tuple[str, List[str]]:
     
     return context, urls
 
-def _build_knowledge_graph_info(retrieved_docs: List) -> Tuple[str, int, int]:
+def _build_knowledge_graph_info(retrieved_docs: List) -> Tuple[str, int, int]: #returns kg_info, no. of nodes, no. of edges
     """Builds a simple knowledge graph from retrieved documents and returns a string summary."""
-    G = nx.DiGraph()
+    G = nx.DiGraph() #Directed Graph, where edges (relationships) have a direction: from one node to another.
     for doc in retrieved_docs:
         text = doc.page_content
         doc_nlp = NLP(text)
@@ -178,9 +177,9 @@ async def run_rag_query(query: str) -> Dict:
     docs = TEXT_SPLITTER.split_text(full_text)
     
     # Create LangChain Documents from the text chunks
-    from langchain_core.documents import Document
+    from langchain_core.documents import Document #standard format for FAISS and retrievers
     lc_docs = [Document(page_content=d, metadata={"source": "MongoDB" if retrieved_from_db else "Web Search"}) for d in docs]
-    
+    # Standardized structure helps FAISS and retriever know what text belongs to what source
     # Use FAISS for vector search on the fly (for the current query)
     vector_db = FAISS.from_documents(lc_docs, EMBEDDING)
     retriever = vector_db.as_retriever(search_kwargs={"k": 5})
@@ -195,15 +194,16 @@ async def run_rag_query(query: str) -> Dict:
     # 6. Generate Prompt and Answer using Gemini
     prompt = f"""
 You are **Gemini 2.5 Pro**, an advanced retrieval-augmented AI system.
-You specialize in combining retrieved knowledge with logical reasoning to provide concise, factual, and contextually grounded answers.
-You are given the following retrieved information and (if available) a simple knowledge graph representation of key entities and relations.
+Your task is to carefully analyze and synthesize information from multiple retrieved sources to generate a detailed, factual, and comprehensive answer.
+
+You are provided with retrieved content and, if available, a knowledge graph of key entities and their relationships.
 
 ---
 
-### CONTEXT
+### CONTEXT (Extracted from Multiple URLs)
 {context}
 
-### KNOWLEDGE GRAPH
+### KNOWLEDGE GRAPH (If Available)
 {kg_info}
 
 ---
@@ -214,24 +214,55 @@ You are given the following retrieved information and (if available) a simple kn
 ---
 
 ### INSTRUCTIONS
-1. Use only verified facts from the provided context and knowledge graph to form your answer.  
-2. If the answer is **not clearly supported by the context**, explicitly say so — for example:  
-   *"The retrieved information does not contain a direct answer, but based on general knowledge..."*  
-3. If you must infer, keep it **logical, minimal, and clearly marked as inference.**  
-4. Always maintain these qualities:
-   - **Clarity:** Write in well-structured, professional English.  
-   - **Conciseness:** Limit the answer to 2–3 rich sentences.  
-   - **Credibility:** Do not fabricate facts or data.  
-   - **Relevance:** Directly address the user’s question.  
+
+1. **Primary Objective:**  
+   Extract and integrate all relevant information from the provided context, ensuring that the final response represents the most complete understanding possible from *all* sources.
+
+2. **Multi-Source Integration:**  
+   - If different URLs provide **distinct or conflicting details**, explicitly mention this.  
+     Example:  
+     *"According to [URL 1], it states that..., whereas [URL 2] mentions..."*  
+   - When multiple sources agree, merge their information seamlessly to form a unified answer.  
+   - Always reference the relevant URL(s) when comparing or contrasting information.
+
+3. **Depth of Information:**  
+   - Include important facts, data points, examples, and key explanations present in the retrieved texts.  
+   - Provide elaboration wherever the context offers additional depth or nuance.  
+   - Avoid omitting significant details, even if they appear in only one source.
+
+4. **Structure & Clarity:**  
+   Organize your response into **clear sections**:
+   - **Comprehensive Answer:** Present the full, detailed explanation synthesized from all retrieved sources.  
+   - **Source Comparison:** Highlight differences, discrepancies, or unique points from individual URLs.  
+   - **Final Summary:** Conclude with a concise but complete summary that integrates and reconciles all findings.
+
+5. **Quality Guidelines:**
+   - Maintain **accuracy**: use only facts found in the provided context.  
+   - Maintain **clarity**: ensure the response flows logically and reads professionally.  
+   - Maintain **neutrality**: avoid assumptions or personal tone.  
+   - Do **not** fabricate information beyond what is present in the context.
+
+6. **Length & Output Format:**
+   - Do *not* limit the answer to a specific number of lines or sentences.  
+   - Provide as much relevant detail as the retrieved information allows.  
+   - Ensure the final output is cohesive, factual, and well-structured.
 
 ---
 
 ### OUTPUT FORMAT
-Provide only the final answer text — no explanations of reasoning, no bullet points, and no extra formatting.
+
+**Comprehensive Answer:**  
+<full synthesized explanation>
+
+**Source Comparison:**  
+<explanation of what each URL contributes or where they differ>
+
+**Final Summary:**  
+<overall conclusion summarizing key points from all sources>
 """
 
     try:
-        # ✅ Fixed Gemini API call — use string instead of dicts
+        
         response = client.models.generate_content(
             model=MODEL,
             contents=prompt

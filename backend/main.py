@@ -26,10 +26,10 @@ class ChatSession(BaseModel):
     title: str
     last_timestamp: str
 
-class ChatHistoryResponse(BaseModel):
+class ChatHistoryResponse(BaseModel): #Represents the entire conversation history for a given session.
     history: List[Dict]
 
-class ChatSessionsResponse(BaseModel):
+class ChatSessionsResponse(BaseModel): #Represents a list of all chat sessions — used by your Streamlit sidebar
     sessions: List[ChatSession]
 
 @app.post("/query", response_model=QueryResponse)
@@ -59,6 +59,6 @@ async def fetch_sessions():
     sessions = await get_all_chat_sessions()
     return {"sessions": sessions}
 
-@app.get("/")
+@app.get("/") #A simple root endpoint that confirms the API is running.
 async def root():
     return {"message": "Welcome to the RAG-Fusion AI Agent API!"}
